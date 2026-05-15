@@ -9,7 +9,7 @@ import Link from 'next/link'
 
 export default function WalletLoginPage() {
   const router = useRouter()
-  const { address, isConnected, isConnecting, error, connectWallet, signMessage } = useWallet()
+  const { address, isConnected, isConnecting, error, balance, connectWallet, signMessage, setBalance } = useWallet()
   const [isAuthenticating, setIsAuthenticating] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
 
@@ -65,6 +65,12 @@ export default function WalletLoginPage() {
       localStorage.setItem('wallet_token', data.token)
       localStorage.setItem('wallet_address', data.address)
 
+      // Set balance if available
+      if (data.blockdagBalance) {
+        setBalance(data.blockdagBalance)
+        localStorage.setItem('blockdag_balance', data.blockdagBalance)
+      }
+
       // Redirect to game
       router.push('/game')
     } catch (err: any) {
@@ -101,8 +107,15 @@ export default function WalletLoginPage() {
           )}
 
           {isConnected && (
-            <div className="mb-4 p-3 bg-primary/10 border border-primary/50 rounded text-primary text-sm">
-              Connected: {address?.slice(0, 6)}...{address?.slice(-4)}
+            <div className="mb-4 space-y-2">
+              <div className="p-3 bg-primary/10 border border-primary/50 rounded text-primary text-sm">
+                Connected: {address?.slice(0, 6)}...{address?.slice(-4)}
+              </div>
+              {balance && (
+                <div className="p-3 bg-green-900/20 border border-green-500/50 rounded text-green-200 text-sm">
+                  Balance: {balance} BDAG
+                </div>
+              )}
             </div>
           )}
 

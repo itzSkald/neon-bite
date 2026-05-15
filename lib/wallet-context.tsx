@@ -8,9 +8,11 @@ interface WalletContextType {
   isConnected: boolean
   isConnecting: boolean
   error: string | null
+  balance: string | null
   connectWallet: () => Promise<void>
   disconnectWallet: () => void
   signMessage: (message: string) => Promise<string>
+  setBalance: (balance: string | null) => void
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined)
@@ -20,6 +22,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [balance, setBalance] = useState<string | null>(null)
 
   // Check if wallet is already connected on mount
   useEffect(() => {
@@ -75,6 +78,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setAddress(null)
     setIsConnected(false)
     setError(null)
+    setBalance(null)
   }, [])
 
   const signMessage = useCallback(async (message: string): Promise<string> => {
@@ -99,9 +103,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         isConnected,
         isConnecting,
         error,
+        balance,
         connectWallet,
         disconnectWallet,
         signMessage,
+        setBalance,
       }}
     >
       {children}
