@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyMessage } from 'ethers'
 import { createClient } from '@/lib/supabase/server'
+import { getBlockDAGBalance } from '@/lib/blockdag'
 
 export async function POST(request: NextRequest) {
   try {
@@ -73,6 +74,16 @@ export async function POST(request: NextRequest) {
       profile = existingProfile
     }
 
+    // Fetch BlockDAG balance
+    let blockdagBalance = null
+    try {
+      const balanceData = await getBlockDAGBalance(address)
+      blockdagBalance = balanceData.balance
+    } catch (balanceError) {
+      console.error('[v0] Error fetching BlockDAG balance:', balanceError)
+      // Don't fail auth if balance fetch fails, just continue without it
+    }
+
     // Create custom JWT token with wallet address claim
     const token = await createCustomToken(address)
 
@@ -81,6 +92,7 @@ export async function POST(request: NextRequest) {
       profile,
       token,
       address: address.toLowerCase(),
+      blockdagBalance,
     })
   } catch (error: any) {
     console.error('[v0] Wallet auth error:', error)
