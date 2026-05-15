@@ -1,39 +1,83 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
+import { useWallet } from '@/lib/wallet-context'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Zap, ArrowLeft, Loader2 } from 'lucide-react'
+import { Zap, ArrowLeft, Loader2, Wallet } from 'lucide-react'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
+  const { address, isConnected, isConnecting, error, balance, connectWallet, signMessage, setBalance } = useWallet()
+  const [isAuthenticating, setIsAuthenticating] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
-    setError(null)
-
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-
-    if (error) {
-      setError(error.message)
-      setIsLoading(false)
-      return
+  // Auto-authenticate when wallet is connected
+  useEffect(() => {
+    const authenticate = async () => {
+      if (isConnected && address && !isAuthenticating) {
+        await handleWalletAuth()
+      }
     }
+    authenticate()
+  }, [isConnected, address])
 
-    router.push('/game')
+  const handleWalletConnect = async () => {
+    setAuthError(null)
+    await connectWallet()
+  }
+
+  const handleWalletAuth = async () => {
+    if (!address) return
+
+    setIsAuthenticating(true)
+    setAuthError(null)
+
+    try {
+      // Create a challenge message
+      const message = `Sign this message to authenticate to NEON BITE\n\nWallet: ${address}\nTimestamp: ${new Date().toISOString()}`
+
+      // Get user to sign the message
+      const signature = await signMessage(message)
+
+      // Send signature to backend for verification
+      const response = await fetch('/api/auth/wallet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          address,
+          message,
+          signature,
+        }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Authentication failed')
+      }
+
+      const data = await response.json()
+
+      // Store token in localStorage
+      localStorage.setItem('wallet_token', data.token)
+      localStorage.setItem('wallet_address', data.address)
+
+      // Set balance if available
+      if (data.blockdagBalance) {
+        setBalance(data.blockdagBalance)
+        localStorage.setItem('blockdag_balance', data.blockdagBalance)
+      }
+
+      // Redirect to game
+      router.push('/game')
+    } catch (err: any) {
+      setAuthError(err.message || 'Authentication failed')
+      setIsAuthenticating(false)
+    }
   }
 
   return (
@@ -71,75 +115,100 @@ export default function LoginPage() {
             ACCESS PORTAL
           </h1>
           <p className="text-muted-foreground font-mono mt-2">
-            Enter your credentials
+            Connect your BlockDAG wallet to play
           </p>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="text-sm font-mono text-muted-foreground block mb-2">
-              EMAIL ADDRESS
-            </label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="operator@neon.io"
-              required
-              className="bg-card border-border/50 focus:border-primary"
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-mono text-muted-foreground block mb-2">
-              PASSWORD
-            </label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter secure password"
-              required
-              className="bg-card border-border/50 focus:border-primary"
-            />
-          </div>
-
-          {error && (
+        {/* Wallet Connection */}
+        <div className="space-y-4">
+          {/* Error Messages */}
+          {(error || authError) && (
             <motion.p
               className="text-destructive text-sm font-mono bg-destructive/10 border border-destructive/50 rounded-lg p-3"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
             >
-              {error}
+              {error || authError}
             </motion.p>
           )}
 
+          {/* Connected Status */}
+          {isConnected && (
+            <motion.div
+              className="space-y-2"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            >
+              <div className="p-3 bg-primary/10 border border-primary/50 rounded-lg text-primary text-sm font-mono">
+                <div className="flex items-center gap-2">
+                  <Wallet className="w-4 h-4" />
+                  <span>Connected: {address?.slice(0, 6)}...{address?.slice(-4)}</span>
+                </div>
+              </div>
+              {balance && (
+                <div className="p-3 bg-green-900/20 border border-green-500/50 rounded-lg text-green-200 text-sm font-mono">
+                  <div className="flex items-center justify-between">
+                    <span>BDAG Balance:</span>
+                    <span className="font-bold">{balance} BDAG</span>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* Connect Button */}
           <Button
-            type="submit"
+            onClick={handleWalletConnect}
+            disabled={isConnecting || isAuthenticating || isConnected}
             className="w-full"
-            disabled={isLoading}
+            size="lg"
           >
-            {isLoading ? (
+            {isConnecting || isAuthenticating ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Authenticating...
+                {isConnecting ? 'Connecting...' : 'Authenticating...'}
+              </>
+            ) : isConnected ? (
+              <>
+                <Zap className="w-4 h-4 mr-2" />
+                Wallet Connected
               </>
             ) : (
               <>
-                <Zap className="w-4 h-4 mr-2" />
-                Access System
+                <Wallet className="w-4 h-4 mr-2" />
+                Connect Wallet
               </>
             )}
           </Button>
-        </form>
 
-        {/* Sign up link */}
+          {/* Info Box */}
+          <div className="bg-card/50 border border-border/50 rounded-lg p-4 text-sm text-muted-foreground font-mono space-y-2">
+            <p className="flex items-start gap-2">
+              <span className="text-primary">01.</span>
+              Click &quot;Connect Wallet&quot; to link your wallet
+            </p>
+            <p className="flex items-start gap-2">
+              <span className="text-primary">02.</span>
+              Sign the message to verify ownership
+            </p>
+            <p className="flex items-start gap-2">
+              <span className="text-primary">03.</span>
+              Start playing and earn on BlockDAG
+            </p>
+          </div>
+        </div>
+
+        {/* MetaMask link */}
         <p className="text-center text-muted-foreground font-mono text-sm mt-6">
-          New operator?{' '}
-          <Link href="/auth/sign-up" className="text-primary hover:underline">
-            Create Identity
-          </Link>
+          Don&apos;t have a wallet?{' '}
+          <a 
+            href="https://metamask.io" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-primary hover:underline"
+          >
+            Install MetaMask
+          </a>
         </p>
       </motion.div>
     </div>
